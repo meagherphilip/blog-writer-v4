@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+Development Rules & Guidelines
+Context 7 Integration
+
+Always use the context7 MCP server to reference documentation for libraries like Next.js, React, Tailwind CSS, shadcn/ui, Supabase, and OpenAI.
+For the tokens, start with 5000 but then increase to 20,000 if your first search doesn't give relevant documentation.
+Only search three times maximum for any specific piece of documentation. If you don't get what you need, use web search for a wider search.
