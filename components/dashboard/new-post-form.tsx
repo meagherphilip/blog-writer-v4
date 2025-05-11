@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,65 +10,96 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 export function NewPostForm() {
   const [isGenerating, setIsGenerating] = useState(false)
-  const [generatedContent, setGeneratedContent] = useState("")
+  const [researchResult, setResearchResult] = useState<null | { title: string; main_keyword: string; key_points: string[] }>(null)
   const [activeTab, setActiveTab] = useState("prompt")
+  const [topic, setTopic] = useState("The Future of AI in Content Creation")
+  const [icp, setIcp] = useState("Content creators, marketers, and business owners")
+  const [style, setStyle] = useState("Professional and informative")
+  const [keywords, setKeywords] = useState("AI, content creation, future, technology")
+  const [feedback, setFeedback] = useState("")
+  const [lastPrompt, setLastPrompt] = useState<{ topic: string; icp: string; style: string; keywords: string[] } | null>(null)
+  const [article, setArticle] = useState<string>("")
+  const [isWriting, setIsWriting] = useState(false)
 
-  const handleGenerate = () => {
+  const handleGenerate = async (override?: { topic: string; icp: string; style: string; keywords: string[]; feedback?: string }) => {
     setIsGenerating(true)
-
-    // Simulate AI generation
-    setTimeout(() => {
-      setGeneratedContent(`# The Future of AI in Content Creation
-
-## Introduction
-
-Artificial Intelligence (AI) is revolutionizing the way we create, distribute, and consume content. From automated writing assistants to sophisticated image generators, AI tools are becoming increasingly integrated into the content creation workflow. This blog post explores the current state of AI in content creation, its benefits and limitations, and what the future might hold for content creators.
-
-## How AI is Transforming Content Creation
-
-### Automated Writing and Editing
-
-AI-powered writing tools like GPT-4 can now generate human-like text, assist with editing, and even help overcome writer's block. These tools analyze patterns in language and can produce coherent, contextually relevant content based on simple prompts.
-
-### Image and Video Generation
-
-With the advent of tools like DALL-E, Midjourney, and Stable Diffusion, creating visual content has never been more accessible. These AI systems can generate images from text descriptions, opening up new possibilities for visual storytelling.
-
-### Content Personalization
-
-AI algorithms can analyze user behavior and preferences to deliver personalized content experiences. This level of customization was previously impossible at scale but is now becoming standard practice.
-
-## Benefits of AI in Content Creation
-
-1. **Increased Efficiency**: AI can dramatically reduce the time spent on routine content tasks.
-2. **Scalability**: Create more content with fewer resources.
-3. **Consistency**: Maintain a consistent voice and quality across all content.
-4. **Data-Driven Insights**: Make better content decisions based on AI analysis.
-
-## Challenges and Limitations
-
-Despite its advantages, AI content creation faces several challenges:
-
-- **Quality Control**: AI-generated content may lack the nuance and depth of human-created content.
-- **Ethical Concerns**: Issues around plagiarism, bias, and authenticity remain unresolved.
-- **Creative Limitations**: AI still struggles with truly original thinking and emotional intelligence.
-
-## The Future of AI and Human Collaboration
-
-The most promising future for content creation lies not in AI replacing humans, but in effective collaboration between the two. AI can handle routine tasks, generate ideas, and provide data-driven insights, while humans focus on strategy, creativity, and emotional connection.
-
-## Conclusion
-
-AI is not replacing human content creators—it's augmenting their capabilities. By embracing AI tools and developing new workflows that leverage both artificial and human intelligence, content creators can produce better work more efficiently than ever before.
-
-The future of content creation is neither purely human nor purely artificial—it's collaborative, with each contributing their unique strengths to the creative process.`)
-
+    setResearchResult(null)
+    try {
+      const topicVal = override?.topic ?? topic
+      const icpVal = override?.icp ?? icp
+      const styleVal = override?.style ?? style
+      const keywordsArr = override?.keywords !== undefined ? override.keywords : (keywords.split(",").map(k => k.trim()).filter(Boolean) || [])
+      const feedbackText = override?.feedback || ""
+      setLastPrompt({ topic: topicVal, icp: icpVal, style: styleVal, keywords: keywordsArr })
+      const res = await fetch("/api/blog/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topicVal, icp: icpVal, style: styleVal, keywords: keywordsArr, feedback: feedbackText }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResearchResult(data)
+        setActiveTab("preview")
+      } else {
+        setResearchResult({ title: "Error", main_keyword: "", key_points: [data.error || "Unknown error"] })
+      }
+    } catch (err) {
+      setResearchResult({ title: "Error", main_keyword: "", key_points: [String(err)] })
+    } finally {
       setIsGenerating(false)
-      setActiveTab("preview")
-    }, 3000)
+    }
+  }
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!lastPrompt) return
+    setTopic(lastPrompt.topic)
+    setIcp(lastPrompt.icp)
+    setStyle(lastPrompt.style)
+    setKeywords(lastPrompt.keywords.join(", "))
+    await handleGenerate({ ...lastPrompt, feedback })
+    setFeedback("")
+  }
+
+  async function handleGenerateFullBlog() {
+    if (!researchResult) return
+    setIsWriting(true)
+    setArticle("")
+    try {
+      const res = await fetch("/api/blog/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: researchResult.title,
+          main_keyword: researchResult.main_keyword,
+          key_points: researchResult.key_points,
+          topic,
+          icp,
+          style,
+          keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
+          // Optionally add length, seo, citations from settings tab if you want
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setArticle(data.article)
+        console.log('Generated article markdown:', data.article)
+        setActiveTab("fullblog")
+      } else {
+        setArticle(`# Error\n${data.error || "Unknown error"}`)
+        setActiveTab("fullblog")
+      }
+    } catch (err) {
+      setArticle(`# Error\n${String(err)}`)
+      setActiveTab("fullblog")
+    } finally {
+      setIsWriting(false)
+    }
   }
 
   return (
@@ -77,77 +108,55 @@ The future of content creation is neither purely human nor purely artificial—i
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="prompt">Prompt</TabsTrigger>
-            <TabsTrigger value="preview" disabled={!generatedContent}>
-              Preview
+            <TabsTrigger value="preview" disabled={!researchResult}>
+              Outline
+            </TabsTrigger>
+            <TabsTrigger value="fullblog" disabled={!article}>
+              Full Blog
             </TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="prompt" className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="title">Blog Post Title</Label>
+              <Label htmlFor="topic">Blog Topic</Label>
               <Input
-                id="title"
-                placeholder="Enter a title for your blog post"
-                defaultValue="The Future of AI in Content Creation"
+                id="topic"
+                placeholder="Enter the topic for your blog post"
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
               />
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select defaultValue="technology">
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="technology">Technology</SelectItem>
-                    <SelectItem value="marketing">Marketing</SelectItem>
-                    <SelectItem value="business">Business</SelectItem>
-                    <SelectItem value="design">Design</SelectItem>
-                    <SelectItem value="productivity">Productivity</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tone">Tone</Label>
-                <Select defaultValue="informative">
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a tone" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="informative">Informative</SelectItem>
-                    <SelectItem value="conversational">Conversational</SelectItem>
-                    <SelectItem value="professional">Professional</SelectItem>
-                    <SelectItem value="persuasive">Persuasive</SelectItem>
-                    <SelectItem value="entertaining">Entertaining</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="icp">Ideal Customer Profile (ICP)</Label>
+              <Input
+                id="icp"
+                placeholder="Describe your target audience"
+                value={icp}
+                onChange={e => setIcp(e.target.value)}
+              />
             </div>
-
+            <div className="space-y-2">
+              <Label htmlFor="style">Style</Label>
+              <Input
+                id="style"
+                placeholder="e.g. Professional, Conversational, Witty"
+                value={style}
+                onChange={e => setStyle(e.target.value)}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="keywords">Keywords (comma separated)</Label>
               <Input
                 id="keywords"
                 placeholder="AI, content creation, future, technology"
-                defaultValue="AI, content creation, future, technology"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Brief Description or Outline</Label>
-              <Textarea
-                id="description"
-                placeholder="Describe what you want your blog post to be about"
-                className="min-h-[100px]"
-                defaultValue="Explore how AI is changing content creation, the benefits and challenges, and what the future holds for content creators working with AI tools."
+                value={keywords}
+                onChange={e => setKeywords(e.target.value)}
               />
             </div>
 
             <Button
-              onClick={handleGenerate}
+              onClick={() => handleGenerate()}
               className="w-full bg-black text-white hover:bg-slate-800"
               disabled={isGenerating}
             >
@@ -177,65 +186,54 @@ The future of content creation is neither purely human nor purely artificial—i
                 </>
               ) : (
                 <>
-                  <Sparkles className="mr-2 h-4 w-4" /> Generate Blog Post
+                  <Sparkles className="mr-2 h-4 w-4" /> Generate Blog Outline
                 </>
               )}
             </Button>
           </TabsContent>
 
           <TabsContent value="preview" className="space-y-6">
-            <div className="border rounded-md p-6 min-h-[500px] prose max-w-none">
-              {generatedContent.split("\n\n").map((paragraph, index) => {
-                if (paragraph.startsWith("# ")) {
-                  return (
-                    <h1 key={index} className="text-3xl font-bold mb-6">
-                      {paragraph.substring(2)}
-                    </h1>
-                  )
-                } else if (paragraph.startsWith("## ")) {
-                  return (
-                    <h2 key={index} className="text-2xl font-bold mt-8 mb-4">
-                      {paragraph.substring(3)}
-                    </h2>
-                  )
-                } else if (paragraph.startsWith("### ")) {
-                  return (
-                    <h3 key={index} className="text-xl font-bold mt-6 mb-3">
-                      {paragraph.substring(4)}
-                    </h3>
-                  )
-                } else if (paragraph.startsWith("- ")) {
-                  return (
-                    <ul key={index} className="list-disc pl-6 mb-4">
-                      {paragraph.split("\n").map((item, i) => (
-                        <li key={i} className="mb-1">
-                          {item.substring(2)}
-                        </li>
-                      ))}
-                    </ul>
-                  )
-                } else if (paragraph.match(/^\d+\. /)) {
-                  return (
-                    <ol key={index} className="list-decimal pl-6 mb-4">
-                      {paragraph.split("\n").map((item, i) => {
-                        const content = item.replace(/^\d+\. /, "")
-                        return (
-                          <li key={i} className="mb-1">
-                            {content}
-                          </li>
-                        )
-                      })}
-                    </ol>
-                  )
-                } else {
-                  return (
-                    <p key={index} className="mb-4">
-                      {paragraph}
-                    </p>
-                  )
-                }
-              })}
-            </div>
+            {researchResult ? (
+              <div className="border rounded-md p-6 min-h-[300px] prose max-w-none">
+                <h1 className="text-3xl font-bold mb-4">{researchResult.title}</h1>
+                <p className="mb-2"><strong>Main Keyword:</strong> {researchResult.main_keyword}</p>
+                <h2 className="text-xl font-semibold mt-4 mb-2">Key Points</h2>
+                <ul className="list-disc ml-6">
+                  {researchResult.key_points.map((point, idx) => (
+                    <li key={idx}>{point}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="text-gray-500">No research results yet. Fill out the form and click Generate.</div>
+            )}
+
+            {/* Feedback Section */}
+            {researchResult && (
+              <form onSubmit={handleFeedbackSubmit} className="space-y-4 mt-6">
+                <Label htmlFor="feedback">Feedback (optional)</Label>
+                <Textarea
+                  id="feedback"
+                  value={feedback}
+                  onChange={e => setFeedback(e.target.value)}
+                  placeholder="Suggest changes, request a different style, add/remove key points, etc."
+                  className="min-h-[80px]"
+                  disabled={isGenerating}
+                />
+                <Button type="submit" className="bg-black text-white hover:bg-slate-800" disabled={isGenerating || !feedback.trim()}>
+                  {isGenerating ? "Regenerating..." : "Regenerate Outline with Feedback"}
+                </Button>
+              </form>
+            )}
+
+            {/* Generate Full Blog Button */}
+            {researchResult && (
+              <div className="flex justify-end mt-6">
+                <Button onClick={handleGenerateFullBlog} className="bg-black text-white hover:bg-slate-800" disabled={isWriting}>
+                  {isWriting ? "Generating Full Blog..." : "Generate Full Blog"}
+                </Button>
+              </div>
+            )}
 
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setActiveTab("prompt")}>
@@ -243,6 +241,18 @@ The future of content creation is neither purely human nor purely artificial—i
               </Button>
               <Button className="bg-black text-white hover:bg-slate-800">Publish Post</Button>
             </div>
+          </TabsContent>
+
+          <TabsContent value="fullblog" className="space-y-6">
+            {isWriting ? (
+              <div className="text-gray-500">Generating full blog article...</div>
+            ) : article ? (
+              <div className="prose prose-slate max-w-none border rounded-md p-6 min-h-[300px]">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{article}</ReactMarkdown>
+              </div>
+            ) : (
+              <div className="text-gray-500">No full blog article generated yet.</div>
+            )}
           </TabsContent>
 
           <TabsContent value="settings" className="space-y-6">
