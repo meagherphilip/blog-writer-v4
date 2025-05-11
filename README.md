@@ -92,10 +92,6 @@ The project is currently a fully designed frontend prototype with all UI compone
 5. Modal dialogs and dropdown menus
 6. Status indicators and badges
 
-
-
-
-
 ## Technology Stack
 
 - **Frontend Framework**: Next.js 14 (App Router)
@@ -162,10 +158,6 @@ node --version
 npm --version
 ```
 
-
-
-
-
 2. **Git**
 
 1. Install Git for version control
@@ -226,6 +218,8 @@ Create a `.env.local` file in the root directory with the following variables:
 ```shellscript
 npm run dev
 ```
+
+
 
 This will start the Next.js development server. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
