@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
       icp,
       style,
       keywords,
+      creativity = 0.7,
       length = 'medium',
       seo = 'balanced',
       citations = 'when-needed',
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
         { role: 'user', content: userPrompt },
       ],
       max_tokens: 2048,
-      temperature: 0.7,
+      temperature: creativity,
     });
 
     const content = completion.choices[0]?.message?.content;

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { MoreHorizontal, Pencil, Trash2, Eye, ArrowUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -26,109 +26,31 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-
-const posts = [
-  {
-    id: "1",
-    title: "10 Strategies to Boost Your Content Marketing ROI",
-    status: "published",
-    category: "Marketing",
-    date: "2023-04-23",
-    views: 1245,
-    excerpt:
-      "Discover proven tactics to maximize the return on your content marketing investment and drive more conversions.",
-  },
-  {
-    id: "2",
-    title: "The Future of AI in Healthcare: Trends to Watch",
-    status: "published",
-    category: "Technology",
-    date: "2023-04-20",
-    views: 2100,
-    excerpt: "Explore how artificial intelligence is transforming patient care, diagnostics, and medical research.",
-  },
-  {
-    id: "3",
-    title: "Sustainable Business Practices for 2023 and Beyond",
-    status: "draft",
-    category: "Business",
-    date: "2023-04-18",
-    views: 0,
-    excerpt: "Learn how companies are implementing eco-friendly initiatives to reduce their environmental impact.",
-  },
-  {
-    id: "4",
-    title: "How to Build a Successful Social Media Strategy",
-    status: "published",
-    category: "Marketing",
-    date: "2023-04-15",
-    views: 987,
-    excerpt: "A comprehensive guide to creating and implementing an effective social media strategy for your business.",
-  },
-  {
-    id: "5",
-    title: "Understanding Blockchain Technology: A Beginner's Guide",
-    status: "draft",
-    category: "Technology",
-    date: "2023-04-12",
-    views: 0,
-    excerpt: "A simple explanation of blockchain technology and its potential applications beyond cryptocurrency.",
-  },
-  {
-    id: "6",
-    title: "The Psychology of Color in Marketing",
-    status: "published",
-    category: "Marketing",
-    date: "2023-04-10",
-    views: 1432,
-    excerpt: "How different colors affect consumer behavior and how to use this knowledge in your marketing campaigns.",
-  },
-  {
-    id: "7",
-    title: "How to Optimize Your Website for Voice Search",
-    status: "published",
-    category: "SEO",
-    date: "2023-04-08",
-    views: 876,
-    excerpt: "Practical tips for optimizing your website content for the growing trend of voice search queries.",
-  },
-  {
-    id: "8",
-    title: "The Impact of Remote Work on Company Culture",
-    status: "draft",
-    category: "Business",
-    date: "2023-04-05",
-    views: 0,
-    excerpt: "Examining how the shift to remote work has affected company culture and employee engagement.",
-  },
-  {
-    id: "9",
-    title: "Essential Tools for Digital Marketers in 2023",
-    status: "published",
-    category: "Marketing",
-    date: "2023-04-03",
-    views: 1089,
-    excerpt: "A curated list of the most useful tools and software for digital marketers this year.",
-  },
-  {
-    id: "10",
-    title: "How to Create an Effective Content Calendar",
-    status: "published",
-    category: "Content",
-    date: "2023-04-01",
-    views: 1567,
-    excerpt: "Step-by-step guide to planning and organizing your content strategy with an effective calendar system.",
-  },
-]
+import { supabase } from "@/lib/supabaseClient"
+import { useSession } from '@supabase/auth-helpers-react'
 
 export function PostsTable() {
-  const [data, setData] = useState(posts)
+  const [data, setData] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: "ascending" | "descending" } | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 5
+  const session = useSession()
+
+  useEffect(() => {
+    async function fetchPosts() {
+      if (!session) return;
+      const { data, error } = await supabase
+        .from("blog_posts")
+        .select("id, title, status, created_at, content")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false })
+      if (!error && data) setData(data)
+    }
+    fetchPosts()
+  }, [session])
 
   const deletePost = (id: string) => {
     setData(data.filter((post) => post.id !== id))
@@ -161,7 +83,7 @@ export function PostsTable() {
   const filteredPosts = sortedData.filter((post) => {
     const matchesSearch =
       post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.excerpt.toLowerCase().includes(searchTerm.toLowerCase())
+      post.content.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesStatus = statusFilter === "all" || post.status === statusFilter
     const matchesCategory = categoryFilter === "all" || post.category === categoryFilter
     return matchesSearch && matchesStatus && matchesCategory
@@ -269,7 +191,7 @@ export function PostsTable() {
                     <TableRow key={post.id}>
                       <TableCell>
                         <div className="font-medium">{post.title}</div>
-                        <div className="text-sm text-muted-foreground line-clamp-1">{post.excerpt}</div>
+                        <div className="text-sm text-muted-foreground line-clamp-1">{post.content}</div>
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -280,7 +202,7 @@ export function PostsTable() {
                         </Badge>
                       </TableCell>
                       <TableCell>{post.category}</TableCell>
-                      <TableCell>{post.date}</TableCell>
+                      <TableCell>{post.created_at}</TableCell>
                       <TableCell className="text-right">{post.views.toLocaleString()}</TableCell>
                       <TableCell>
                         <DropdownMenu>

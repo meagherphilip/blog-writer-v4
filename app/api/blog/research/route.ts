@@ -5,7 +5,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
-    const { topic, icp, style, keywords } = await req.json();
+    const { topic, icp, style, keywords, creativity = 0.7 } = await req.json();
     if (!topic || !icp || !style) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       ],
       response_format: { type: 'json_object' },
       max_tokens: 512,
-      temperature: 0.7,
+      temperature: creativity,
     });
 
     const content = completion.choices[0]?.message?.content;

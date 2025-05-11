@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { supabase } from "@/lib/supabaseClient"
+import { useSession } from '@supabase/auth-helpers-react'
 
 export function NewPostForm() {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -25,6 +27,30 @@ export function NewPostForm() {
   const [lastPrompt, setLastPrompt] = useState<{ topic: string; icp: string; style: string; keywords: string[] } | null>(null)
   const [article, setArticle] = useState<string>("")
   const [isWriting, setIsWriting] = useState(false)
+  const [creativity, setCreativity] = useState(0.7)
+  const [length, setLength] = useState('medium')
+  const [seo, setSeo] = useState('balanced')
+  const [citations, setCitations] = useState('when-needed')
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+  const [categoryId, setCategoryId] = useState<string>("")
+  const [addingCategory, setAddingCategory] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [loadingCategory, setLoadingCategory] = useState(false)
+  const session = useSession()
+
+  useEffect(() => {
+    async function fetchCategories() {
+      let query = supabase.from("categories").select("id, name, user_id").order("name")
+      if (session) {
+        query = query.or(`user_id.is.null,user_id.eq.${session.user.id}`)
+      } else {
+        query = query.is("user_id", null)
+      }
+      const { data, error } = await query
+      if (!error && data) setCategories(data)
+    }
+    fetchCategories()
+  }, [session])
 
   const handleGenerate = async (override?: { topic: string; icp: string; style: string; keywords: string[]; feedback?: string }) => {
     setIsGenerating(true)
@@ -39,7 +65,7 @@ export function NewPostForm() {
       const res = await fetch("/api/blog/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicVal, icp: icpVal, style: styleVal, keywords: keywordsArr, feedback: feedbackText }),
+        body: JSON.stringify({ topic: topicVal, icp: icpVal, style: styleVal, keywords: keywordsArr, feedback: feedbackText, creativity, length, seo, citations }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -82,7 +108,10 @@ export function NewPostForm() {
           icp,
           style,
           keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
-          // Optionally add length, seo, citations from settings tab if you want
+          creativity,
+          length,
+          seo,
+          citations,
         }),
       })
       const data = await res.json()
@@ -102,6 +131,52 @@ export function NewPostForm() {
     }
   }
 
+  async function handleAddCategory() {
+    if (!newCategoryName.trim() || !session) return;
+    setLoadingCategory(true)
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({ name: newCategoryName.trim(), slug: newCategoryName.trim().toLowerCase().replace(/\s+/g, '-'), user_id: session.user.id })
+      .select()
+      .single()
+    setLoadingCategory(false)
+    if (error) {
+      alert(error.message)
+      return
+    }
+    if (data) {
+      setCategories((prev) => [...prev, data])
+      setCategoryId(data.id)
+      setAddingCategory(false)
+      setNewCategoryName("")
+    }
+  }
+
+  async function handleSavePost(status: 'draft' | 'published') {
+    if (!session) {
+      alert('You must be logged in to save a post.');
+      return;
+    }
+    if (!article || !categoryId) {
+      alert('Please generate a blog and select a category before saving.');
+      return;
+    }
+    const { error } = await supabase.from('blog_posts').insert({
+      user_id: session.user.id,
+      title: researchResult?.title || topic,
+      content: article,
+      status,
+      category_id: categoryId,
+      // Add other fields as needed (excerpt, etc.)
+    });
+    if (error) {
+      alert('Failed to save post: ' + error.message);
+    } else {
+      alert(status === 'published' ? 'Blog post published!' : 'Draft saved!');
+      // Optionally reset form or redirect
+    }
+  }
+
   return (
     <Card>
       <CardContent className="p-6">
@@ -118,6 +193,42 @@ export function NewPostForm() {
           </TabsList>
 
           <TabsContent value="prompt" className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="category">Category</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger id="category">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                  ))}
+                  <div className="border-t mt-2 pt-2">
+                    {addingCategory ? (
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          value={newCategoryName}
+                          onChange={e => setNewCategoryName(e.target.value)}
+                          placeholder="New category name"
+                          className="h-8"
+                          disabled={loadingCategory}
+                        />
+                        <Button size="sm" onClick={handleAddCategory} disabled={loadingCategory || !newCategoryName.trim()}>
+                          {loadingCategory ? "Adding..." : "Add"}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setAddingCategory(false)} disabled={loadingCategory}>
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button variant="ghost" className="w-full justify-start" onClick={() => setAddingCategory(true)}>
+                        + Add Category
+                      </Button>
+                    )}
+                  </div>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="topic">Blog Topic</Label>
               <Input
@@ -239,7 +350,10 @@ export function NewPostForm() {
               <Button variant="outline" onClick={() => setActiveTab("prompt")}>
                 Edit Prompt
               </Button>
-              <Button className="bg-black text-white hover:bg-slate-800">Publish Post</Button>
+              <div className="flex gap-2">
+                <Button className="bg-gray-200 text-black hover:bg-gray-300" onClick={() => handleSavePost('draft')}>Save as Draft</Button>
+                <Button className="bg-black text-white hover:bg-slate-800" onClick={() => handleSavePost('published')}>Publish Post</Button>
+              </div>
             </div>
           </TabsContent>
 
@@ -264,7 +378,7 @@ export function NewPostForm() {
                   <Label htmlFor="creativity">Creativity</Label>
                   <span className="text-sm text-muted-foreground">0.7</span>
                 </div>
-                <Slider id="creativity" defaultValue={[0.7]} max={1} step={0.1} className="w-full" />
+                <Slider id="creativity" value={[creativity]} max={1} step={0.1} className="w-full" onValueChange={([v]) => setCreativity(v)} />
                 <p className="text-sm text-muted-foreground">Higher values produce more creative and varied outputs.</p>
               </div>
 
@@ -273,7 +387,7 @@ export function NewPostForm() {
                   <Label htmlFor="length">Length</Label>
                   <span className="text-sm text-muted-foreground">Medium</span>
                 </div>
-                <Select defaultValue="medium">
+                <Select value={length} onValueChange={setLength}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select length" />
                   </SelectTrigger>
@@ -288,7 +402,7 @@ export function NewPostForm() {
 
               <div className="space-y-2">
                 <Label htmlFor="seo">SEO Optimization</Label>
-                <Select defaultValue="balanced">
+                <Select value={seo} onValueChange={setSeo}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select SEO level" />
                   </SelectTrigger>
@@ -305,7 +419,7 @@ export function NewPostForm() {
 
               <div className="space-y-2">
                 <Label htmlFor="citations">Include Citations</Label>
-                <Select defaultValue="when-needed">
+                <Select value={citations} onValueChange={setCitations}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select citation style" />
                   </SelectTrigger>
