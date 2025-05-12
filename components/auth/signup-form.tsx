@@ -51,7 +51,7 @@ export function SignUpForm() {
       const { error } = await supabase.auth.signInWithOtp({
         email: data.email,
         options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
+          emailRedirectTo: `${window.location.origin}/api/auth/callback`,
         },
       })
       // You can store the user's name after verification, e.g., in a profile table
