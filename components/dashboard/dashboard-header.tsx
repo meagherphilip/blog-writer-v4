@@ -1,4 +1,6 @@
 import type React from "react"
+import { UserHeaderInfo } from './user-nav'
+
 interface DashboardHeaderProps {
   heading: string
   text?: string
@@ -12,7 +14,9 @@ export function DashboardHeader({ heading, text, children }: DashboardHeaderProp
         <h1 className="font-heading text-3xl md:text-4xl font-bold">{heading}</h1>
         {text && <p className="text-lg text-muted-foreground">{text}</p>}
       </div>
-      {children}
+      <div className="flex flex-col items-end gap-1">
+        {children}
+      </div>
     </div>
   )
 }

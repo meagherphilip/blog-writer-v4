@@ -59,6 +59,7 @@ export function SignUpForm() {
         setError(error.message)
         setIsSuccess(false)
       } else {
+        localStorage.setItem('pendingProfileName', data.name);
         setIsSuccess(true)
       }
     } catch (err) {
