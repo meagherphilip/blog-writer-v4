@@ -129,7 +129,7 @@ export function PostsTable() {
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
                   {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
+                    <SelectItem key={category ?? `category-${Math.random()}`} value={category}>
                       {category}
                     </SelectItem>
                   ))}
@@ -190,7 +190,11 @@ export function PostsTable() {
                   currentItems.map((post) => (
                     <TableRow key={post.id}>
                       <TableCell>
-                        <div className="font-medium">{post.title}</div>
+                        <div className="font-medium">
+                          <Link href={`/dashboard/posts/${post.id}/edit`} className="hover:underline text-black">
+                            {post.title}
+                          </Link>
+                        </div>
                         <div className="text-sm text-muted-foreground line-clamp-1">{post.content}</div>
                       </TableCell>
                       <TableCell>
@@ -202,8 +206,8 @@ export function PostsTable() {
                         </Badge>
                       </TableCell>
                       <TableCell>{post.category}</TableCell>
-                      <TableCell>{post.created_at}</TableCell>
-                      <TableCell className="text-right">{post.views.toLocaleString()}</TableCell>
+                      <TableCell>{post.created_at ? new Date(post.created_at).toLocaleString() : '—'}</TableCell>
+                      <TableCell className="text-right">{typeof post.views === 'number' ? post.views.toLocaleString() : '—'}</TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>

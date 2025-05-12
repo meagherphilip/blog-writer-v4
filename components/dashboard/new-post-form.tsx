@@ -15,27 +15,28 @@ import remarkGfm from 'remark-gfm'
 import { supabase } from "@/lib/supabaseClient"
 import { useSession } from '@supabase/auth-helpers-react'
 
-export function NewPostForm() {
+export default function NewPostForm({ post }: { post?: any }) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [researchResult, setResearchResult] = useState<null | { title: string; main_keyword: string; key_points: string[] }>(null)
   const [activeTab, setActiveTab] = useState("prompt")
-  const [topic, setTopic] = useState("The Future of AI in Content Creation")
-  const [icp, setIcp] = useState("Content creators, marketers, and business owners")
-  const [style, setStyle] = useState("Professional and informative")
-  const [keywords, setKeywords] = useState("AI, content creation, future, technology")
+  const [topic, setTopic] = useState(post?.topic || "The Future of AI in Content Creation")
+  const [icp, setIcp] = useState(post?.icp || "Content creators, marketers, and business owners")
+  const [style, setStyle] = useState(post?.style || "Professional and informative")
+  const [keywords, setKeywords] = useState(post?.keywords || "AI, content creation, future, technology")
   const [feedback, setFeedback] = useState("")
   const [lastPrompt, setLastPrompt] = useState<{ topic: string; icp: string; style: string; keywords: string[] } | null>(null)
-  const [article, setArticle] = useState<string>("")
+  const [article, setArticle] = useState<string>(post?.content || "")
   const [isWriting, setIsWriting] = useState(false)
   const [creativity, setCreativity] = useState(0.7)
   const [length, setLength] = useState('medium')
   const [seo, setSeo] = useState('balanced')
   const [citations, setCitations] = useState('when-needed')
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
-  const [categoryId, setCategoryId] = useState<string>("")
+  const [categoryId, setCategoryId] = useState<string>(post?.category_id || "")
   const [addingCategory, setAddingCategory] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
   const [loadingCategory, setLoadingCategory] = useState(false)
+  const [outlineId, setOutlineId] = useState<string | null>(null)
   const session = useSession()
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export function NewPostForm() {
       const topicVal = override?.topic ?? topic
       const icpVal = override?.icp ?? icp
       const styleVal = override?.style ?? style
-      const keywordsArr = override?.keywords !== undefined ? override.keywords : (keywords.split(",").map(k => k.trim()).filter(Boolean) || [])
+      const keywordsArr = override?.keywords !== undefined ? override.keywords : (keywords.split(",").map((k: string) => k.trim()).filter(Boolean) || [])
       const feedbackText = override?.feedback || ""
       setLastPrompt({ topic: topicVal, icp: icpVal, style: styleVal, keywords: keywordsArr })
       const res = await fetch("/api/blog/research", {
@@ -71,11 +72,30 @@ export function NewPostForm() {
       if (res.ok) {
         setResearchResult(data)
         setActiveTab("preview")
+        // Save outline to blog_outlines
+        if (session) {
+          const { data: outlineRow, error } = await supabase
+            .from('blog_outlines')
+            .insert({
+              user_id: session.user.id,
+              outline: data,
+              blog_post_id: post?.id || null
+            })
+            .select()
+            .single()
+          if (!error && outlineRow) {
+            setOutlineId(outlineRow.id)
+          } else {
+            setOutlineId(null)
+          }
+        }
       } else {
         setResearchResult({ title: "Error", main_keyword: "", key_points: [data.error || "Unknown error"] })
+        setOutlineId(null)
       }
     } catch (err) {
       setResearchResult({ title: "Error", main_keyword: "", key_points: [String(err)] })
+      setOutlineId(null)
     } finally {
       setIsGenerating(false)
     }
@@ -89,6 +109,14 @@ export function NewPostForm() {
     setStyle(lastPrompt.style)
     setKeywords(lastPrompt.keywords.join(", "))
     await handleGenerate({ ...lastPrompt, feedback })
+    // Save feedback to ai_feedback
+    if (session && outlineId && feedback.trim()) {
+      await supabase.from('ai_feedback').insert({
+        user_id: session.user.id,
+        outline_id: outlineId,
+        feedback_text: feedback.trim(),
+      })
+    }
     setFeedback("")
   }
 
@@ -107,7 +135,7 @@ export function NewPostForm() {
           topic,
           icp,
           style,
-          keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
+          keywords: keywords.split(",").map((k: string) => k.trim()).filter(Boolean),
           creativity,
           length,
           seo,
@@ -152,6 +180,14 @@ export function NewPostForm() {
     }
   }
 
+  function generateSlug(title: string) {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric with hyphens
+      .replace(/^-+|-+$/g, '')     // Trim leading/trailing hyphens
+      .replace(/-{2,}/g, '-');     // Replace multiple hyphens with one
+  }
+
   async function handleSavePost(status: 'draft' | 'published') {
     if (!session) {
       alert('You must be logged in to save a post.');
@@ -161,14 +197,29 @@ export function NewPostForm() {
       alert('Please generate a blog and select a category before saving.');
       return;
     }
-    const { error } = await supabase.from('blog_posts').insert({
-      user_id: session.user.id,
-      title: researchResult?.title || topic,
-      content: article,
-      status,
-      category_id: categoryId,
-      // Add other fields as needed (excerpt, etc.)
-    });
+    const titleToUse = researchResult?.title || topic;
+    const slug = generateSlug(titleToUse);
+    let error;
+    if (post && post.id) {
+      // Update existing post
+      ({ error } = await supabase.from('blog_posts').update({
+        title: titleToUse,
+        slug,
+        content: article,
+        status,
+        category_id: categoryId,
+      }).eq('id', post.id));
+    } else {
+      // Insert new post
+      ({ error } = await supabase.from('blog_posts').insert({
+        user_id: session.user.id,
+        title: titleToUse,
+        slug,
+        content: article,
+        status,
+        category_id: categoryId,
+      }));
+    }
     if (error) {
       alert('Failed to save post: ' + error.message);
     } else {
@@ -361,9 +412,18 @@ export function NewPostForm() {
             {isWriting ? (
               <div className="text-gray-500">Generating full blog article...</div>
             ) : article ? (
-              <div className="prose prose-slate max-w-none border rounded-md p-6 min-h-[300px]">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{article}</ReactMarkdown>
-              </div>
+              <>
+                <div className="prose prose-slate max-w-none border rounded-md p-6 min-h-[300px]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{article}</ReactMarkdown>
+                </div>
+                <div className="flex justify-between mt-6">
+                  <Button variant="outline" onClick={() => setActiveTab("preview")}>Back to Outline</Button>
+                  <div className="flex gap-2">
+                    <Button className="bg-gray-200 text-black hover:bg-gray-300" onClick={() => handleSavePost('draft')}>Save as Draft</Button>
+                    <Button className="bg-black text-white hover:bg-slate-800" onClick={() => handleSavePost('published')}>Publish Post</Button>
+                  </div>
+                </div>
+              </>
             ) : (
               <div className="text-gray-500">No full blog article generated yet.</div>
             )}
