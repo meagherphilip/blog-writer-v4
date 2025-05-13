@@ -7,6 +7,7 @@ interface AdminUser {
   email: string
   name: string
   blogCount: number
+  tokensUsed?: number
 }
 
 export default function AdminUsersTable() {
@@ -45,6 +46,7 @@ export default function AdminUsersTable() {
             <th className="px-4 py-2 text-left">Name</th>
             <th className="px-4 py-2 text-left">Email</th>
             <th className="px-4 py-2 text-left">Blog Count</th>
+            <th className="px-4 py-2 text-left">OpenAI Tokens Used</th>
           </tr>
         </thead>
         <tbody>
@@ -53,6 +55,7 @@ export default function AdminUsersTable() {
               <td className="px-4 py-2">{user.name || <span className="italic text-gray-400">(No name)</span>}</td>
               <td className="px-4 py-2">{user.email}</td>
               <td className="px-4 py-2">{user.blogCount}</td>
+              <td className="px-4 py-2">{user.tokensUsed ?? 0}</td>
             </tr>
           ))}
         </tbody>

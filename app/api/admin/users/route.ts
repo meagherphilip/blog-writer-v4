@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // 2. Use service role to fetch all users, profiles, and blog counts
+  // 2. Use service role to fetch all users, profiles, blog counts, and OpenAI usage
   const serviceSupabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -44,6 +44,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: blogCountsError.message }, { status: 500 })
   }
 
+  // Fetch OpenAI token usage per user (aggregate)
+  const { data: usageRows, error: usageError } = await serviceSupabase
+    .from('openai_usage')
+    .select('user_id, total_tokens')
+  if (usageError) {
+    return NextResponse.json({ error: usageError.message }, { status: 500 })
+  }
+  const usageMap: Record<string, number> = {}
+  usageRows?.forEach((row: { user_id: string, total_tokens: number }) => {
+    if (!row.user_id) return
+    usageMap[row.user_id] = (usageMap[row.user_id] || 0) + (row.total_tokens || 0)
+  })
+
   // Aggregate blog counts by user_id
   const blogCountMap: Record<string, number> = {}
   blogCounts?.forEach((row: { user_id: string }) => {
@@ -55,11 +68,13 @@ export async function GET(req: NextRequest) {
   const result = userList.map((u: any) => {
     const profile = profiles.find((p: any) => p.user_id === u.id)
     const blogCount = blogCountMap[u.id] || 0
+    const tokensUsed = usageMap[u.id] || 0
     return {
       id: u.id,
       email: u.email,
       name: profile?.name || '',
       blogCount,
+      tokensUsed,
     }
   })
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -35,6 +37,23 @@ export async function POST(req: NextRequest) {
       max_tokens: 2048,
       temperature: creativity,
     });
+
+    // Log OpenAI usage to the database
+    const usage = completion.usage;
+    if (usage) {
+      const cookieStore = cookies();
+      const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('openai_usage').insert({
+          user_id: user.id,
+          prompt_tokens: usage.prompt_tokens,
+          completion_tokens: usage.completion_tokens,
+          total_tokens: usage.total_tokens,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {
