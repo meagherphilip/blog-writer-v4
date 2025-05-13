@@ -16,3 +16,19 @@ This document tracks ideas and enhancements to consider in the future. These are
 - Add localization/multilanguage support
 
 Feel free to add more ideas as they arise! 
+
+## Creating new blogs
+
+- On the outline, I want version control, so that someone can revert to an earlier outline if they don't like the new one.
+
+## Account Settings
+
+- Remove the Avatar and fix the storage 
+
+
+## Fix the Underlying Version Conflict (Best for Long-Term Health)
+
+- react-day-picker@8.10.1 expects date-fns version ^2.28.0 or ^3.0.0.
+- Your project has date-fns@4.1.0, which is not compatible.
+- To fix: Uninstall the current version: npm uninstall date-fns
+- Install a compatible version: npm install date-fns@3.6.0

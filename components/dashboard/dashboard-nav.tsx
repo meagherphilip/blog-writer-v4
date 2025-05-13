@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { BarChart, FileText, ImageIcon, LayoutDashboard, PenTool, Settings, Sparkles } from "lucide-react"
+import { useSession } from '@supabase/auth-helpers-react'
 
 const items = [
   {
@@ -44,6 +45,8 @@ const items = [
 
 export function DashboardNav() {
   const pathname = usePathname()
+  const session = useSession();
+  const isAdmin = session?.user?.app_metadata?.role === 'admin';
 
   return (
     <nav className="flex flex-col gap-2">
@@ -59,6 +62,18 @@ export function DashboardNav() {
           <span>{item.title}</span>
         </Link>
       ))}
+      {/* Admin link, only visible to admins */}
+      {isAdmin && (
+        <Link
+          href="/dashboard/admin"
+          className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${
+            pathname === "/dashboard/admin" ? "bg-accent text-accent-foreground" : "transparent"
+          }`}
+        >
+          <Settings className="h-4 w-4" />
+          <span>Admin</span>
+        </Link>
+      )}
     </nav>
   )
 }
