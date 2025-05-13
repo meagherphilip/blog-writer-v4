@@ -14,6 +14,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { supabase } from "@/lib/supabaseClient"
 import { useSession } from '@supabase/auth-helpers-react'
+import { formatISO } from 'date-fns'
+import { marked } from 'marked'
 
 export default function NewPostForm({ post }: { post?: any }) {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -37,6 +39,13 @@ export default function NewPostForm({ post }: { post?: any }) {
   const [newCategoryName, setNewCategoryName] = useState("")
   const [loadingCategory, setLoadingCategory] = useState(false)
   const [outlineId, setOutlineId] = useState<string | null>(null)
+  const [wpCategories, setWpCategories] = useState<{ id: number; name: string }[]>([])
+  const [wpCategoryIds, setWpCategoryIds] = useState<number[]>([])
+  const [wpStatus, setWpStatus] = useState<'draft' | 'publish' | 'future'>('draft')
+  const [wpDate, setWpDate] = useState<string>("")
+  const [wpLoading, setWpLoading] = useState(false)
+  const [wpMessage, setWpMessage] = useState<string | null>(null)
+  const [wpError, setWpError] = useState<string | null>(null)
   const session = useSession()
 
   useEffect(() => {
@@ -52,6 +61,19 @@ export default function NewPostForm({ post }: { post?: any }) {
     }
     fetchCategories()
   }, [session])
+
+  useEffect(() => {
+    async function fetchWpCategories() {
+      try {
+        const res = await fetch('/api/integrations/wordpress/categories')
+        const data = await res.json()
+        if (res.ok && data.categories) {
+          setWpCategories(data.categories)
+        }
+      } catch {}
+    }
+    fetchWpCategories()
+  }, [])
 
   const handleGenerate = async (override?: { topic: string; icp: string; style: string; keywords: string[]; feedback?: string }) => {
     setIsGenerating(true)
@@ -225,6 +247,33 @@ export default function NewPostForm({ post }: { post?: any }) {
     } else {
       alert(status === 'published' ? 'Blog post published!' : 'Draft saved!');
       // Optionally reset form or redirect
+    }
+  }
+
+  async function handlePublishToWordPress() {
+    setWpLoading(true)
+    setWpMessage(null)
+    setWpError(null)
+    try {
+      const htmlContent = marked(article)
+      const res = await fetch('/api/integrations/wordpress/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: researchResult?.title || topic,
+          content: htmlContent,
+          categories: wpCategoryIds,
+          status: wpStatus,
+          date: wpStatus === 'future' && wpDate ? formatISO(new Date(wpDate)) : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to publish')
+      setWpMessage('Published to WordPress!')
+    } catch (err: any) {
+      setWpError(err.message)
+    } finally {
+      setWpLoading(false)
     }
   }
 
@@ -415,6 +464,60 @@ export default function NewPostForm({ post }: { post?: any }) {
               <>
                 <div className="prose prose-slate max-w-none border rounded-md p-6 min-h-[300px]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{article}</ReactMarkdown>
+                </div>
+                {/* WordPress Publishing UI */}
+                <div className="border rounded-md p-6 mt-6 space-y-4">
+                  <h3 className="text-lg font-bold mb-2">Publish to WordPress</h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="wp-categories">Categories</Label>
+                    <div id="wp-categories" className="flex flex-wrap gap-3">
+                      {wpCategories.map(cat => (
+                        <label key={cat.id} className="flex items-center gap-2 border rounded px-2 py-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={wpCategoryIds.includes(cat.id)}
+                            onChange={e => {
+                              setWpCategoryIds(ids =>
+                                e.target.checked
+                                  ? [...ids, cat.id]
+                                  : ids.filter(id => id !== cat.id)
+                              )
+                            }}
+                          />
+                          <span>{cat.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="wp-status">Status</Label>
+                    <Select value={wpStatus} onValueChange={val => setWpStatus(val as any)}>
+                      <SelectTrigger id="wp-status">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="publish">Publish Now</SelectItem>
+                        <SelectItem value="future">Schedule</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {wpStatus === 'future' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="wp-date">Schedule Date/Time</Label>
+                      <Input
+                        id="wp-date"
+                        type="datetime-local"
+                        value={wpDate}
+                        onChange={e => setWpDate(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <Button onClick={handlePublishToWordPress} disabled={wpLoading || !article} className="bg-black text-white hover:bg-slate-800">
+                    {wpLoading ? 'Publishing...' : 'Publish to WordPress'}
+                  </Button>
+                  {wpMessage && <div className="text-green-600 text-sm pt-2">{wpMessage}</div>}
+                  {wpError && <div className="text-red-600 text-sm pt-2">{wpError}</div>}
                 </div>
                 <div className="flex justify-between mt-6">
                   <Button variant="outline" onClick={() => setActiveTab("preview")}>Back to Outline</Button>

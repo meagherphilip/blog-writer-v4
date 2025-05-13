@@ -14,6 +14,7 @@ import { AlertCircle, Check, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { supabase } from "@/lib/supabaseClient"
 import { useSession } from '@supabase/auth-helpers-react'
+import WordPressIntegrationForm from './wordpress-integration-form'
 
 export function SettingsForm() {
   const [isSaving, setIsSaving] = useState(false)
@@ -386,14 +387,11 @@ export function SettingsForm() {
       <TabsContent value="integrations">
         <Card>
           <CardHeader>
-            <CardTitle>Integrations</CardTitle>
-            <CardDescription>Connect your account to third-party services and manage integrations.</CardDescription>
+            <CardTitle>WordPress Integration</CardTitle>
+            <CardDescription>Connect your WordPress site to publish posts directly from BlogAI.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label>Coming soon: Google, Zapier, and more!</Label>
-              <p className="text-sm text-muted-foreground">You'll be able to connect your account to popular services and automate your workflow.</p>
-            </div>
+            <WordPressIntegrationForm />
           </CardContent>
         </Card>
       </TabsContent>

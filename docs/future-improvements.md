@@ -32,3 +32,11 @@ Feel free to add more ideas as they arise!
 - Your project has date-fns@4.1.0, which is not compatible.
 - To fix: Uninstall the current version: npm uninstall date-fns
 - Install a compatible version: npm install date-fns@3.6.0
+
+
+## Publishing to different platforms.
+
+- Wordpress
+- Beehiiv
+- LinkedIn (there should be a dropdown at the start asking what where the post is for )
+- With affiliate blogs, there should be the option to supply links that are to be included in the article.
