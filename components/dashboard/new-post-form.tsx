@@ -14,7 +14,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { supabase } from "@/lib/supabaseClient"
 import { useSession } from '@supabase/auth-helpers-react'
-import { formatISO } from 'date-fns'
+import { formatISO, format } from 'date-fns'
 import { marked } from 'marked'
 
 export default function NewPostForm({ post }: { post?: any }) {
@@ -47,6 +47,12 @@ export default function NewPostForm({ post }: { post?: any }) {
   const [wpMessage, setWpMessage] = useState<string | null>(null)
   const [wpError, setWpError] = useState<string | null>(null)
   const session = useSession()
+  const autosaveTimer = useRef<NodeJS.Timeout | null>(null)
+  const [autosaveMessage, setAutosaveMessage] = useState<string | null>(null)
+  const [postId, setPostId] = useState(post?.id || null)
+  const [outlineHistory, setOutlineHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [draftGroupId, setDraftGroupId] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchCategories() {
@@ -75,6 +81,81 @@ export default function NewPostForm({ post }: { post?: any }) {
     fetchWpCategories()
   }, [])
 
+  useEffect(() => {
+    if (!article || !categoryId) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(async () => {
+      await handleAutosaveDraft()
+      setAutosaveMessage('Draft autosaved')
+      setTimeout(() => setAutosaveMessage(null), 2000)
+    }, 1500)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [article, topic, icp, style, keywords, categoryId])
+
+  // Fetch outline history when editing an existing post
+  useEffect(() => {
+    if (!postId) return
+    setLoadingHistory(true)
+    fetch(`/api/blog/outlines?blog_post_id=${postId}`)
+      .then(res => res.json())
+      .then(data => {
+        setOutlineHistory(data.outlines || [])
+        setLoadingHistory(false)
+      })
+      .catch(() => setLoadingHistory(false))
+  }, [postId])
+
+  // When loading outline history, set prompt fields from latest outline if present
+  useEffect(() => {
+    if (outlineHistory.length > 0) {
+      const latest = outlineHistory[0].outline
+      if (latest) {
+        if (latest.topic) setTopic(latest.topic)
+        if (latest.icp) setIcp(latest.icp)
+        if (latest.style) setStyle(latest.style)
+        if (latest.keywords) setKeywords(Array.isArray(latest.keywords) ? latest.keywords.join(', ') : latest.keywords)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outlineHistory.length])
+
+  // Save outline (always, even if postId is not set)
+  async function saveOutline(data: any) {
+    if (!session) return;
+    let groupId = draftGroupId;
+    if (!postId && !groupId) {
+      groupId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+      setDraftGroupId(groupId);
+    }
+    const { data: outlineRow, error } = await supabase
+      .from('blog_outlines')
+      .insert({
+        user_id: session.user.id,
+        outline: data,
+        blog_post_id: postId || null,
+        draft_group_id: postId ? null : groupId || null
+      })
+      .select()
+      .single();
+    if (!error && outlineRow) {
+      setOutlineId(outlineRow.id)
+    } else {
+      setOutlineId(null)
+    }
+  }
+
+  // Update orphan outlines when a new post is created
+  async function associateOrphanOutlines(newPostId: string) {
+    if (!session || !draftGroupId) return;
+    await supabase
+      .from('blog_outlines')
+      .update({ blog_post_id: newPostId, draft_group_id: null })
+      .eq('user_id', session.user.id)
+      .eq('draft_group_id', draftGroupId)
+      .is('blog_post_id', null);
+    setDraftGroupId(null);
+  }
+
   const handleGenerate = async (override?: { topic: string; icp: string; style: string; keywords: string[]; feedback?: string }) => {
     setIsGenerating(true)
     setResearchResult(null)
@@ -94,23 +175,18 @@ export default function NewPostForm({ post }: { post?: any }) {
       if (res.ok) {
         setResearchResult(data)
         setActiveTab("preview")
-        // Save outline to blog_outlines
-        if (session) {
-          const { data: outlineRow, error } = await supabase
-            .from('blog_outlines')
-            .insert({
-              user_id: session.user.id,
-              outline: data,
-              blog_post_id: post?.id || null
-            })
-            .select()
-            .single()
-          if (!error && outlineRow) {
-            setOutlineId(outlineRow.id)
-          } else {
-            setOutlineId(null)
-          }
-        }
+        // Save outline (include prompt fields)
+        await saveOutline({
+          ...data,
+          topic: topicVal,
+          icp: icpVal,
+          style: styleVal,
+          keywords: keywordsArr,
+          creativity,
+          length,
+          seo,
+          citations,
+        })
       } else {
         setResearchResult({ title: "Error", main_keyword: "", key_points: [data.error || "Unknown error"] })
         setOutlineId(null)
@@ -210,6 +286,43 @@ export default function NewPostForm({ post }: { post?: any }) {
       .replace(/-{2,}/g, '-');     // Replace multiple hyphens with one
   }
 
+  async function handleAutosaveDraft() {
+    if (!session) return;
+    const titleToUse = researchResult?.title || topic;
+    const slug = generateSlug(titleToUse);
+    let error, newId;
+    if (postId) {
+      // Update existing post
+      ({ error } = await supabase.from('blog_posts').update({
+        title: titleToUse,
+        slug,
+        content: article,
+        status: 'draft',
+        category_id: categoryId,
+      }).eq('id', postId));
+    } else {
+      // Insert new post
+      const { data, error: insertError } = await supabase.from('blog_posts').insert({
+        user_id: session.user.id,
+        title: titleToUse,
+        slug,
+        content: article,
+        status: 'draft',
+        category_id: categoryId,
+      }).select().single();
+      error = insertError;
+      newId = data?.id;
+      if (newId) {
+        setPostId(newId);
+        // Associate orphan outlines with this new post
+        await associateOrphanOutlines(newId);
+      }
+    }
+    if (error) {
+      // Optionally handle error (e.g., show a message)
+    }
+  }
+
   async function handleSavePost(status: 'draft' | 'published') {
     if (!session) {
       alert('You must be logged in to save a post.');
@@ -222,7 +335,7 @@ export default function NewPostForm({ post }: { post?: any }) {
     const titleToUse = researchResult?.title || topic;
     const slug = generateSlug(titleToUse);
     let error;
-    if (post && post.id) {
+    if (postId) {
       // Update existing post
       ({ error } = await supabase.from('blog_posts').update({
         title: titleToUse,
@@ -230,17 +343,19 @@ export default function NewPostForm({ post }: { post?: any }) {
         content: article,
         status,
         category_id: categoryId,
-      }).eq('id', post.id));
+      }).eq('id', postId));
     } else {
       // Insert new post
-      ({ error } = await supabase.from('blog_posts').insert({
+      const { data, error: insertError } = await supabase.from('blog_posts').insert({
         user_id: session.user.id,
         title: titleToUse,
         slug,
         content: article,
         status,
         category_id: categoryId,
-      }));
+      }).select().single();
+      error = insertError;
+      if (data?.id) setPostId(data.id);
     }
     if (error) {
       alert('Failed to save post: ' + error.message);
@@ -255,7 +370,10 @@ export default function NewPostForm({ post }: { post?: any }) {
     setWpMessage(null)
     setWpError(null)
     try {
-      const htmlContent = marked(article)
+      let markdownToExport = article;
+      // Remove a leading '# ...' heading if present
+      markdownToExport = markdownToExport.replace(/^# .*(\r?\n)+/, '');
+      const htmlContent = marked(markdownToExport)
       const res = await fetch('/api/integrations/wordpress/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -277,13 +395,22 @@ export default function NewPostForm({ post }: { post?: any }) {
     }
   }
 
+  // Revert to a previous outline version
+  function handleRevertOutline(outline: any) {
+    // Set the researchResult to the reverted outline
+    setResearchResult(outline.outline)
+    // Optionally, set the editor tab to preview
+    setActiveTab('preview')
+    // Optionally, save as a new version (not done automatically here)
+  }
+
   return (
     <Card>
       <CardContent className="p-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="prompt">Prompt</TabsTrigger>
-            <TabsTrigger value="preview" disabled={!researchResult}>
+            <TabsTrigger value="preview" disabled={!researchResult && outlineHistory.length === 0}>
               Outline
             </TabsTrigger>
             <TabsTrigger value="fullblog" disabled={!article}>
@@ -404,6 +531,44 @@ export default function NewPostForm({ post }: { post?: any }) {
           </TabsContent>
 
           <TabsContent value="preview" className="space-y-6">
+            {/* Outline Version History UI */}
+            {postId && (
+              <Card className="mb-4">
+                <CardContent className="p-4">
+                  <h3 className="text-base font-semibold mb-2">Outline Version History</h3>
+                  {loadingHistory ? (
+                    <div className="text-sm text-muted-foreground">Loading history...</div>
+                  ) : outlineHistory.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No previous outlines.</div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {outlineHistory.map((o, idx) => (
+                        <li key={o.id} className="border rounded p-2 flex flex-col gap-1 bg-slate-50">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">{format(new Date(o.created_at), 'yyyy-MM-dd HH:mm')}</span>
+                            <Button size="sm" variant="outline" onClick={() => handleRevertOutline(o)}>
+                              Revert to this
+                            </Button>
+                          </div>
+                          <div className="text-sm font-medium truncate">{o.outline?.title || '[No title]'}</div>
+                          {o.feedback && o.feedback.length > 0 && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Feedback:
+                              <ul className="list-disc ml-4">
+                                {o.feedback.map((fb: any, i: number) => (
+                                  <li key={i}>{fb.feedback_text} <span className="text-[10px] text-gray-400">({format(new Date(fb.created_at), 'yyyy-MM-dd HH:mm')})</span></li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {researchResult ? (
               <div className="border rounded-md p-6 min-h-[300px] prose max-w-none">
                 <h1 className="text-3xl font-bold mb-4">{researchResult.title}</h1>
@@ -465,6 +630,7 @@ export default function NewPostForm({ post }: { post?: any }) {
                 <div className="prose prose-slate max-w-none border rounded-md p-6 min-h-[300px]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{article}</ReactMarkdown>
                 </div>
+                {autosaveMessage && <div className="text-xs text-muted-foreground pt-2">{autosaveMessage}</div>}
                 {/* WordPress Publishing UI */}
                 <div className="border rounded-md p-6 mt-6 space-y-4">
                   <h3 className="text-lg font-bold mb-2">Publish to WordPress</h3>

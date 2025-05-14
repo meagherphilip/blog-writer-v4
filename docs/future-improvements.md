@@ -40,3 +40,7 @@ Feel free to add more ideas as they arise!
 - Beehiiv
 - LinkedIn (there should be a dropdown at the start asking what where the post is for )
 - With affiliate blogs, there should be the option to supply links that are to be included in the article.
+
+## Clusters
+
+- The AI should read your existing blogs and link to some of the relevant posts in new posts.
