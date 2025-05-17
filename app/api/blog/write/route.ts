@@ -52,6 +52,17 @@ export async function POST(req: NextRequest) {
           total_tokens: usage.total_tokens,
           created_at: new Date().toISOString(),
         });
+        // Deduct tokens from balance and check result
+        const { data: decrementSuccess, error: decrementError } = await supabase.rpc('decrement_token_balance', {
+          p_user_id: user.id,
+          p_tokens: usage.total_tokens,
+        });
+        if (decrementError) {
+          return NextResponse.json({ error: 'Failed to decrement token balance.' }, { status: 500 });
+        }
+        if (!decrementSuccess) {
+          return NextResponse.json({ error: 'Insufficient token balance.' }, { status: 402 });
+        }
       }
     }
 
