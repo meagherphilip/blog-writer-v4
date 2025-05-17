@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { SettingsForm } from "@/components/dashboard/settings-form"
+import { Billing } from "@/components/dashboard/billing"
 
 export const metadata: Metadata = {
   title: "Settings | BlogAI",
@@ -14,6 +15,7 @@ export default function SettingsPage() {
         <p className="text-muted-foreground">Manage your account settings and preferences.</p>
       </div>
       <SettingsForm />
+      <Billing />
     </div>
   )
 }

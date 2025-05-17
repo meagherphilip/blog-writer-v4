@@ -44,3 +44,8 @@ Feel free to add more ideas as they arise!
 ## Clusters
 
 - The AI should read your existing blogs and link to some of the relevant posts in new posts.
+
+## Little things
+
+- Tidy up the styling in the admin section.
+- Remove the avatar from the profiles.
